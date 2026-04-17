@@ -1,94 +1,27 @@
 #!/usr/bin/env bash
 set -xeuo pipefail
 
-rm -f /etc/profile.d/gamerslop.sh
-
-dnf5 install -y ScopeBuddy
-
 dnf5 -y copr enable codifryed/CoolerControl
 dnf5 install -y coolercontrol liquidctl
 dnf5 -y copr disable codifryed/CoolerControl
 
-# dnf -y copr enable bieszczaders/kernel-cachyos
-# dnf -y copr disable bieszczaders/kernel-cachyos
-#
-# dnf5 -y --enablerepo=copr:copr.fedorainfracloud.org:bieszczaders:kernel-cachyos \
-#   install \
-#   kernel-cachyos \
-#   kernel-cachyos-devel-matched
-#
-# KERNEL_VERSION="$(ls /usr/lib/modules | sort -V | tail -n1)"
-# KERNEL_SRC="/usr/src/kernels/${KERNEL_VERSION}"
-#
-# echo "== Target kernel: ${KERNEL_VERSION} =="
-#
-# if [[ ! -d "${KERNEL_SRC}" ]]; then
-#   echo "ERROR: Missing kernel headers at ${KERNEL_SRC}"
-#   exit 1
-# fi
-#
-# git clone --depth=1 https://github.com/dlundqvist/xone /tmp/xone
-# pushd /tmp/xone
-#
-# make -C "${KERNEL_SRC}" M="$PWD" modules
-# make -C "${KERNEL_SRC}" M="$PWD" modules_install
-#
-# dnf5 install -y bsdtar
-# cd /tmp/xone
-# ./install/firmware.sh --skip-disclaimer
-#
-# popd
-#
-# depmod -a "${KERNEL_VERSION}"
-#
-# if ! find "/usr/lib/modules/${KERNEL_VERSION}" -iname 'xone*.ko*' | grep -q .; then
-#   echo "ERROR: xone module not installed"
-#   exit 1
-# fi
 
-# Mesa with all video codecs (H.264/H.265/AV1 encode via Vulkan Video).
-# Fedora default mesa only includes patent-free codecs (AV1 only).
-# Terra mesa is built with -Dvideo-codecs=all.
-dnf5 -y --enablerepo=terra-mesa swap mesa-vulkan-drivers mesa-vulkan-drivers
-dnf5 -y --enablerepo=terra-mesa swap mesa-va-drivers mesa-va-drivers
+# Moonshine WSI Vulkan layer
+# Build from source since there are no prebuilt binaries in releases.
+MOONSHINE_VERSION="v0.10.0"
 
-# Moonshine dependencies:
+dnf5 install -y rust cargo clang cmake gcc-c++ wayland-devel
+curl -Lo /tmp/moonshine.tar.gz "https://github.com/hgaiser/moonshine/archive/refs/tags/${MOONSHINE_VERSION}.tar.gz"
+tar -xzf /tmp/moonshine.tar.gz -C /tmp
+cd /tmp/moonshine-${MOONSHINE_VERSION#v}
+CARGO_HOME=/tmp/cargo cargo build --release -p moonshine-wsi
 
-# pactl needed for subshell
-dnf install -y pactl
+install -Dm755 target/release/libmoonshine_wsi.so /usr/lib/moonshine/vulkan-layers/libmoonshine_wsi.so
+install -Dm644 dist/VkLayer_moonshine_wsi.json /usr/share/vulkan/implicit_layer.d/VkLayer_moonshine_wsi.json
+install -Dm644 dist/60-moonshine.rules /usr/lib/udev/rules.d/60-moonshine.rules
 
-# deps for building hgaiser gamescope fork
-dnf5 install -y --skip-unavailable \
-  cmake gcc gcc-c++ git-core meson ninja-build \
-  glm-devel google-benchmark-devel libXcursor-devel libXmu-devel \
-  spirv-headers-devel stb_image-devel stb_image-static \
-  stb_image_resize-devel stb_image_resize-static \
-  stb_image_write-devel stb_image_write-static \
-  hwdata-devel libavif-devel libcap-devel libdecor-devel \
-  libdisplay-info-devel libdrm-devel libeis-devel \
-  libliftoff-devel pipewire-devel systemd-devel \
-  luajit-devel SDL2-devel vulkan-headers vulkan-loader-devel \
-  wayland-protocols-devel wayland-devel \
-  wlroots-devel libxkbcommon-devel xorg-x11-server-Xwayland-devel \
-  libX11-devel libXcomposite-devel libXdamage-devel libXext-devel \
-  libXfixes-devel libXrender-devel libXres-devel libXtst-devel libXxf86vm-devel \
-  glslang
-
-# build hgaiser gamescope fork
-git clone --depth=1 --branch=moonshine https://github.com/hgaiser/gamescope /tmp/gamescope-moonshine
-pushd /tmp/gamescope-moonshine
-
-git submodule update --init --depth=1
-meson setup build/ -Dprefix=/usr -Dpipewire=enabled
-ninja -C build/
-meson install -C build/ --skip-subprojects
-
-popd
-
-# Verify gamescope-moonshine was installed
-if ! /usr/bin/gamescope --help | head -1; then
-  echo "ERROR: gamescope installation failed"
-  exit 1
-fi
-
-systemctl enable coolercontrold.service
+# Clean up build deps to keep image small. /tmp is tmpfs so build artifacts
+# are automatically discarded.
+cd /
+dnf5 remove -y rust cargo clang cmake gcc-c++ wayland-devel
+dnf5 clean all
