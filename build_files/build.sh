@@ -9,6 +9,7 @@ dnf5 -y copr disable codifryed/CoolerControl
 # build (2026-04-24) still has it. Upstream fix lives at AvengeMedia/DankMaterialShell@5ceb908b.
 # Remove this block once the avengemedia/danklinux Copr rebuilds dms-greeter.
 sed -i '/keep-max-bpc-unchanged/d' \
+    /usr/bin/dms-greeter \
     /usr/share/quickshell/dms-greeter/Modules/Greetd/assets/dms-niri.kdl \
     /usr/share/quickshell/dms-greeter/Modules/Greetd/assets/dms-greeter
 
