@@ -1,6 +1,9 @@
 ---
 name: Build disk images
 
+# TODO: the anaconda-iso leg is broken. It and the path filter want
+# ./disk_config/iso.toml, which doesn't exist. See the TODO in the Justfile.
+
 on:
   workflow_dispatch:
     inputs:

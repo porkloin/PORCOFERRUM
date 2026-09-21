@@ -2,15 +2,10 @@
 FROM scratch AS ctx
 COPY build_files /
 
-#FROM ghcr.io/ublue-os/akmods:main-43 AS akmods_common
-
 ### NIRI-SPICY
-## bazzirco installs mainline niri from the yalter/niri-git Copr. We want losnoco's
-## "spicy" fork instead (HDR, Vulkan renderer, window minimizing, tearing control),
-## which publishes no packages, so build it here and install the RPM below.
-##
-## The builder deliberately uses the same base image as the final stage so the deps
-## rpmbuild generates line up with the libraries the image actually ships.
+## Swap bazzirco's Copr niri for losnoco's spicy fork. Nobody packages it, so
+## build an RPM here and install it in build.sh.
+## Same base as the final stage, so rpmbuild's deps match the shipped libs.
 FROM ghcr.io/bazzirco/bazzirco:latest AS niri-spicy
 
 RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
@@ -35,11 +30,6 @@ FROM ghcr.io/bazzirco/bazzirco:latest
 ### MODIFICATIONS
 ## make modifications desired in your image and install packages by modifying the build.sh script
 ## the following RUN directive does all the things required to run "build.sh" as recommended.
-
-
-#COPY --from=akmods_common /rpms/ /var/tmp/akmods-rpms/
-
-#RUN ls -la /var/tmp/akmods-rpms && ls -la /var/tmp/akmods-rpms/kmods || true
 
 RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
   --mount=type=bind,from=niri-spicy,source=/rpms,target=/niri-spicy-rpms \

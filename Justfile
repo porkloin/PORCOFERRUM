@@ -205,6 +205,12 @@ build-qcow2 $target_image=("localhost/" + image_name) $tag=default_tag: && (_bui
 [group('Build Virtal Machine Image')]
 build-raw $target_image=("localhost/" + image_name) $tag=default_tag: && (_build-bib target_image tag "raw" "disk_config/disk.toml")
 
+# TODO: the iso recipes below are broken. They want disk_config/iso.toml; we
+# only ship iso-gnome.toml and iso-kde.toml, both still carrying the template's
+# kickstart for ghcr.io/ublue-os/image-template. Inherited from
+# ublue-os/image-template, broken there too. Either write a real iso.toml or
+# drop ISO support.
+
 # Build an ISO virtual machine image
 [group('Build Virtal Machine Image')]
 build-iso $target_image=("localhost/" + image_name) $tag=default_tag: && (_build-bib target_image tag "iso" "disk_config/iso.toml")

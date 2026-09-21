@@ -1,14 +1,21 @@
 #!/usr/bin/env bash
 set -xeuo pipefail
 
-# Replace bazzirco's mainline niri (yalter/niri-git Copr) with the spicy fork built
-# in the niri-spicy stage. Same package name and a higher version, so this is a
-# plain upgrade rather than a swap.
+# 0.8.2's popup/focus handling instantly dismisses Steam's CEF context menus:
+# https://github.com/Supreeeme/xwayland-satellite/issues/468
+# The repos dropped 0.8.1 when 0.8.2 went stable, so pull it from koji, which
+# keeps every build. Remove once a fix ships.
+XWS_ARCH="$(rpm -E '%{_arch}')"
+dnf5 install -y \
+    "https://kojipkgs.fedoraproject.org/packages/xwayland-satellite/0.8.1/1.fc44/${XWS_ARCH}/xwayland-satellite-0.8.1-1.fc44.${XWS_ARCH}.rpm"
+rpm -q xwayland-satellite | grep -q '^xwayland-satellite-0.8.1-1\.fc44'
+
+# Spicy fork from the niri-spicy stage. Same name, higher version, so it's a
+# plain upgrade over bazzirco's Copr niri.
 dnf5 install -y /niri-spicy-rpms/niri-*.rpm
 rpm -q niri --qf '%{NAME} %{VERSION}-%{RELEASE}\n' | grep spicy
 
-# The niri package owns niri.service, so installing over it drops the Wants=
-# bazzirco adds in its 01-theme.sh. Put them back.
+# Installing over niri.service drops the Wants= bazzirco adds in 01-theme.sh.
 add_wants_niri() {
   sed -i "s/\[Unit\]/\[Unit\]\nWants=$1/" "/usr/lib/systemd/user/niri.service"
 }
@@ -21,13 +28,5 @@ dnf5 install -y coolercontrol liquidctl
 dnf5 -y copr disable codifryed/CoolerControl
 
 dnf5 install -y --enablerepo=terra ghostty
-
-# niri >=26.04 dropped `keep-max-bpc-unchanged`, but the dms-greeter 1.4.6 Copr
-# build (2026-04-24) still has it. Upstream fix lives at AvengeMedia/DankMaterialShell@5ceb908b.
-# Remove this block once the avengemedia/danklinux Copr rebuilds dms-greeter.
-#sed -i '/keep-max-bpc-unchanged/d' \
-#  /usr/bin/dms-greeter \
-#  /usr/share/quickshell/dms-greeter/Modules/Greetd/assets/dms-niri.kdl \
-#  /usr/share/quickshell/dms-greeter/Modules/Greetd/assets/dms-greeter
 
 dnf5 clean all
