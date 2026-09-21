@@ -1,6 +1,21 @@
 #!/usr/bin/env bash
 set -xeuo pipefail
 
+# Replace bazzirco's mainline niri (yalter/niri-git Copr) with the spicy fork built
+# in the niri-spicy stage. Same package name and a higher version, so this is a
+# plain upgrade rather than a swap.
+dnf5 install -y /niri-spicy-rpms/niri-*.rpm
+rpm -q niri --qf '%{NAME} %{VERSION}-%{RELEASE}\n' | grep spicy
+
+# The niri package owns niri.service, so installing over it drops the Wants=
+# bazzirco adds in its 01-theme.sh. Put them back.
+add_wants_niri() {
+  sed -i "s/\[Unit\]/\[Unit\]\nWants=$1/" "/usr/lib/systemd/user/niri.service"
+}
+add_wants_niri udiskie.service
+add_wants_niri foot-server.service
+cat /usr/lib/systemd/user/niri.service
+
 dnf5 -y copr enable codifryed/CoolerControl
 dnf5 install -y coolercontrol liquidctl
 dnf5 -y copr disable codifryed/CoolerControl

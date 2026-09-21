@@ -4,6 +4,20 @@ COPY build_files /
 
 #FROM ghcr.io/ublue-os/akmods:main-43 AS akmods_common
 
+### NIRI-SPICY
+## bazzirco installs mainline niri from the yalter/niri-git Copr. We want losnoco's
+## "spicy" fork instead (HDR, Vulkan renderer, window minimizing, tearing control),
+## which publishes no packages, so build it here and install the RPM below.
+##
+## The builder deliberately uses the same base image as the final stage so the deps
+## rpmbuild generates line up with the libraries the image actually ships.
+FROM ghcr.io/bazzirco/bazzirco:latest AS niri-spicy
+
+RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
+  --mount=type=cache,dst=/var/cache \
+  --mount=type=tmpfs,dst=/tmp \
+  /ctx/build-niri-spicy.sh
+
 # Base Image
 FROM ghcr.io/bazzirco/bazzirco:latest
 
@@ -28,6 +42,7 @@ FROM ghcr.io/bazzirco/bazzirco:latest
 #RUN ls -la /var/tmp/akmods-rpms && ls -la /var/tmp/akmods-rpms/kmods || true
 
 RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
+  --mount=type=bind,from=niri-spicy,source=/rpms,target=/niri-spicy-rpms \
   --mount=type=cache,dst=/var/cache \
   --mount=type=cache,dst=/var/log \
   --mount=type=tmpfs,dst=/tmp \
