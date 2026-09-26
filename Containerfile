@@ -1,20 +1,19 @@
+# Both stages below build FROM this, so it lives in one place.
+ARG BASE_IMAGE=ghcr.io/zirconium-dev/zirconium-jackrabbit:latest
+
 # Allow build scripts to be referenced without being copied into the final image
 FROM scratch AS ctx
 COPY build_files /
 
 ### NIRI-SPICY
-## Swap bazzirco's Copr niri for losnoco's spicy fork. Nobody packages it, so
-## build an RPM here and install it in build.sh.
-## Same base as the final stage, so rpmbuild's deps match the shipped libs.
-FROM ghcr.io/bazzirco/bazzirco:latest AS niri-spicy
+FROM ${BASE_IMAGE} AS niri-spicy
 
 RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
   --mount=type=cache,dst=/var/cache \
   --mount=type=tmpfs,dst=/tmp \
   /ctx/build-niri-spicy.sh
 
-# Base Image
-FROM ghcr.io/bazzirco/bazzirco:latest
+FROM ${BASE_IMAGE}
 
 ### [IM]MUTABLE /opt
 ## Some bootable images, like Fedora, have /opt symlinked to /var/opt, in order to
