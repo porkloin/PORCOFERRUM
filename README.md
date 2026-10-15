@@ -8,3 +8,4 @@ Beyond that, adds a few non-flatpak'd apps that I prefer to use, including:
 
 - coolercontrol
 - ghostty
+- 1password
