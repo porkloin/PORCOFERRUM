@@ -38,12 +38,13 @@ gpgkey=https://downloads.1password.com/linux/keys/1password.asc
 EOF
 groupadd -g 1500 onepassword
 groupadd -g 1501 onepassword-mcp
+groupadd -g 1502 onepassword-cli
 mkdir -p /var/opt
-dnf5 install -y 1password
+dnf5 install -y 1password 1password-cli
 rm /etc/yum.repos.d/1password.repo
 mv /var/opt/1Password /usr/lib/1Password
 echo 'L /opt/1Password - - - - /usr/lib/1Password' > /usr/lib/tmpfiles.d/1password.conf
-printf 'g onepassword 1500\ng onepassword-mcp 1501\n' > /usr/lib/sysusers.d/1password.conf
+printf 'g onepassword 1500\ng onepassword-mcp 1501\ng onepassword-cli 1502\n' > /usr/lib/sysusers.d/1password.conf
 
 # Polkit policy lists local users as owners, so render it at boot. Same
 # logic as the RPM's postinst and install_biometrics_policy.sh.
