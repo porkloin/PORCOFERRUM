@@ -79,6 +79,13 @@ systemctl enable 1password-polkit-policy.service
 dnf5 install -y xdg-native-messaging-proxy
 printf '\nxdg-native-messaging-proxy\n' >> /etc/1password/custom_allowed_browsers
 
+# niri: additions to Zirconium's defaults through its system-wide override (zirconium.kdl includes /etc/niri/local.kdl,
+# ahead of DMS's configs), and niri-hdr, whose ~/.config/niri/hdr.kdl they include. ~/.config/niri stays Zirconium's.
+install -Dm644 /ctx/niri/porcoferrum.kdl /usr/share/porcoferrum/niri/porcoferrum.kdl
+mkdir -p /etc/niri
+echo 'include "/usr/share/porcoferrum/niri/porcoferrum.kdl"' > /etc/niri/local.kdl
+install -Dm755 /ctx/niri/niri-hdr /usr/bin/niri-hdr
+
 # zjust recipes
 install -m 644 /ctx/70-porcoferrum.just /usr/share/zirconium/just/70-porcoferrum.just
 echo 'import "/usr/share/zirconium/just/70-porcoferrum.just"' >> /usr/share/zirconium/just/00-start.just

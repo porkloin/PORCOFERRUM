@@ -1,0 +1,44 @@
+// porcoferrum's additions to Zirconium's niri defaults. /etc/niri/local.kdl includes this file, and Zirconium's
+// zirconium.kdl includes that, after its own defaults and before DMS's configs (~/.config/niri/dms.kdl).
+// Per-user changes still go in ~/.config/niri/local.kdl, which loads last.
+
+// HDR, from `niri-hdr on`. niri doesn't merge `output` blocks across includes and the first one wins, so this has to
+// load before DMS's dms/outputs.kdl: here, not in ~/.config/niri/local.kdl. Absent means SDR.
+include optional=true "~/.config/niri/hdr.kdl"
+
+input {
+    touchpad {
+        // The DualSense's touchpad shows up as one; nothing else here has a touchpad.
+        off
+    }
+}
+
+layout {
+    always-center-single-column
+}
+
+window-rule {
+    match app-id=r#"app\.zen_browser\.zen$"# title="^Picture-in-Picture$"
+    match app-id=r#"Zen Browser$"# title="^Picture-in-Picture$"
+    open-floating true
+}
+
+window-rule {
+    match app-id="steam"
+    match title=r#"Friends List"#
+    default-column-width { proportion 0.1; }
+    open-focused false
+}
+
+window-rule {
+    match app-id="steam"
+    match title="Steam"
+    exclude title=r#"Friends List|Settings"#
+    default-column-width { proportion 0.6666; }
+}
+
+window-rule {
+    match app-id=r#"steam_app_\d+"#
+    open-fullscreen true
+    open-focused true
+}

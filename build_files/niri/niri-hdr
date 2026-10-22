@@ -1,0 +1,333 @@
+#!/usr/bin/env python3
+"""Toggle niri-spicy HDR on an output without hand-maintaining config.
+
+niri has no HDR action in its IPC, so HDR can only come from config. And niri
+inserts `output` blocks from includes as-is without merging, first one winning,
+so an override file has to carry the *whole* block, not just the hdr child.
+
+Rather than duplicate mode/scale/position by hand and let it drift, this copies
+whatever DMS currently has in dms/outputs.kdl and injects the hdr child. DMS
+stays the source of truth; HDR is a toggle on top.
+"""
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+
+NIRI_DIR = os.path.expanduser("~/.config/niri")
+DMS_OUTPUTS = os.path.join(NIRI_DIR, "dms", "outputs.kdl")
+HDR_FILE = os.path.join(NIRI_DIR, "hdr.kdl")
+# The image includes HDR_FILE from here, which Zirconium's zirconium.kdl loads
+# (through /etc/niri/local.kdl) ahead of DMS's dms/outputs.kdl.
+IMAGE_KDL = "/usr/share/porcoferrum/niri/porcoferrum.kdl"
+ETC_LOCAL = "/etc/niri/local.kdl"
+FALLBACK_PEAK = 800  # only if the display declares nothing
+
+
+def die(msg):
+    print(f"niri-hdr: {msg}", file=sys.stderr)
+    sys.exit(1)
+
+
+def edid_luminance(connector):
+    """Pull HDR luminance from the display's own EDID.
+
+    CTA-861 HDR Static Metadata Data Block (extended tag 0x06) carries the
+    luminance the panel wants content mastered to, encoded as
+    50 * 2^(value/32). Parsed here rather than shelling out to edid-decode,
+    which lives in v4l-utils and is not guaranteed to be installed.
+
+    Returns (peak, frame_avg, minimum) in nits, any of which may be None.
+    """
+    import glob
+    paths = [p for p in glob.glob("/sys/class/drm/*/edid")
+             if os.path.basename(os.path.dirname(p)).split("-", 1)[-1] == connector]
+    for path in paths:
+        try:
+            with open(path, "rb") as f:
+                blob = f.read()
+        except OSError:
+            continue
+        if len(blob) < 256:
+            continue
+        # Walk the CTA-861 extension blocks (tag 0x02).
+        for base in range(128, len(blob), 128):
+            ext = blob[base:base + 128]
+            if len(ext) < 128 or ext[0] != 0x02:
+                continue
+            dtd_start = ext[2]
+            if not (4 <= dtd_start <= 127):
+                continue
+            i = 4
+            while i < dtd_start:
+                header = ext[i]
+                length = header & 0x1F
+                tag = header >> 5
+                if length == 0:
+                    break
+                body = ext[i + 1:i + 1 + length]
+                if tag == 7 and body and body[0] == 0x06:  # extended: HDR static metadata
+                    def decode(v):
+                        return round(50 * (2 ** (v / 32)))
+                    peak = decode(body[3]) if len(body) > 3 else None
+                    favg = decode(body[4]) if len(body) > 4 else None
+                    mini = None
+                    if len(body) > 5 and peak:
+                        mini = peak * ((body[5] / 255) ** 2) / 100
+                    return peak, favg, mini
+                i += 1 + length
+    return None, None, None
+
+
+def live_outputs():
+    try:
+        out = subprocess.run(["niri", "msg", "-j", "outputs"],
+                             capture_output=True, text=True, timeout=5)
+        return json.loads(out.stdout) if out.returncode == 0 else {}
+    except Exception:
+        return {}
+
+
+def pick_output(requested):
+    outs = live_outputs()
+    if requested:
+        return requested
+    if len(outs) == 1:
+        return next(iter(outs))
+    if not outs:
+        die("no outputs reported by niri; pass --output")
+    die(f"multiple outputs connected ({', '.join(sorted(outs))}); pass --output")
+
+
+def block_names_for(connector):
+    """DMS may key the block on the connector or on make/model/serial."""
+    names = [connector]
+    info = live_outputs().get(connector) or {}
+    make, model, serial = info.get("make"), info.get("model"), info.get("serial")
+    if make and model:
+        names.append(" ".join(x for x in (make, model, serial) if x))
+    return names
+
+
+def extract_block(text, names):
+    """Return the body (inner lines) of `output "NAME" { ... }`, brace-matched."""
+    i, n = 0, len(text)
+    while True:
+        i = text.find('output', i)
+        if i < 0:
+            return None
+        j = i + len('output')
+        while j < n and text[j] in ' \t':
+            j += 1
+        if j >= n or text[j] != '"':
+            i += 1
+            continue
+        j += 1
+        start = j
+        while j < n and text[j] != '"':
+            j += 1
+        name = text[start:j]
+        j += 1
+        while j < n and text[j] in ' \t\r\n':
+            j += 1
+        if j >= n or text[j] != '{':
+            i += 1
+            continue
+        depth, k, in_str = 1, j + 1, False
+        body_start = k
+        while k < n and depth:
+            c = text[k]
+            if in_str:
+                if c == '\\':
+                    k += 2
+                    continue
+                if c == '"':
+                    in_str = False
+            elif c == '"':
+                in_str = True
+            elif c == '{':
+                depth += 1
+            elif c == '}':
+                depth -= 1
+                if not depth:
+                    break
+            k += 1
+        if name in names:
+            return text[body_start:k]
+        i = k
+    return None
+
+
+def strip_hdr(body):
+    """Drop any existing hdr child so we never emit two."""
+    lines, out, skip_depth = body.splitlines(), [], None
+    for line in lines:
+        s = line.strip()
+        if skip_depth is None and (s == "hdr" or s.startswith("hdr ")):
+            if "{" in s and "}" not in s:
+                skip_depth = 1
+            continue
+        if skip_depth is not None:
+            skip_depth += s.count("{") - s.count("}")
+            if skip_depth <= 0:
+                skip_depth = None
+            continue
+        out.append(line)
+    return "\n".join(out)
+
+
+def synthesize(connector):
+    info = live_outputs().get(connector) or {}
+    lines = []
+    modes, cur = info.get("modes") or [], info.get("current_mode")
+    if cur is not None and cur < len(modes):
+        m = modes[cur]
+        lines.append(f'    mode "{m["width"]}x{m["height"]}@{m["refresh_rate"]/1000:.3f}"')
+    logical = info.get("logical") or {}
+    if logical:
+        lines.append(f'    scale {logical.get("scale", 1)}')
+        lines.append(f'    position x={logical.get("x", 0)} y={logical.get("y", 0)}')
+    return "\n".join(lines)
+
+
+def build(connector, mode, ref, peak):
+    names = block_names_for(connector)
+    body = None
+    if os.path.exists(DMS_OUTPUTS):
+        with open(DMS_OUTPUTS) as f:
+            body = extract_block(f.read(), names)
+    if body is None:
+        body = synthesize(connector)
+        src = "live niri state (no DMS block found)"
+    else:
+        src = os.path.relpath(DMS_OUTPUTS, NIRI_DIR)
+    body = strip_hdr(body).strip("\n").rstrip()
+    # niri already reads peak luminance from the EDID and defaults reference
+    # luminance to BT.2408's 203 nits, so only emit these when overridden.
+    children = []
+    if ref is not None:
+        children.append(f"        reference-luminance {ref}")
+    if peak is not None:
+        children.append(f"        peak-luminance {peak}")
+    if children:
+        inner = "\n".join(children)
+        hdr = f'    hdr mode="{mode}" {{\n{inner}\n    }}'
+    else:
+        hdr = f'    hdr mode="{mode}"'
+    return (f"// Generated by niri-hdr from {src} - regenerate, do not hand-edit.\n"
+            f'output "{names[0]}" {{\n{body}\n{hdr}\n}}\n'), src
+
+
+def include_problem():
+    """Why HDR_FILE wouldn't be loaded ahead of DMS, or None if it would.
+
+    Output blocks do not merge and the first wins, and dms.kdl pulls in
+    dms/outputs.kdl, so the include has to come before it: the image puts it in
+    /etc/niri/local.kdl's chain, which Zirconium's defaults load first."""
+    def includes(path, needle):
+        try:
+            with open(path) as f:
+                return any(l.strip().startswith("include") and needle in l for l in f)
+        except OSError:
+            return False
+
+    if not includes(ETC_LOCAL, f'"{IMAGE_KDL}"'):
+        return f"{ETC_LOCAL} doesn't include {IMAGE_KDL} (edited locally? `sudo cp /usr/etc/niri/local.kdl /etc/niri/`)"
+    if not includes(IMAGE_KDL, '"~/.config/niri/hdr.kdl"'):
+        return f"{IMAGE_KDL} doesn't include ~/.config/niri/hdr.kdl"
+    return None
+
+
+def validate_or_revert(existed_before):
+    r = subprocess.run(["niri", "validate"], capture_output=True, text=True)
+    if r.returncode == 0:
+        return True
+    if not existed_before and os.path.exists(HDR_FILE):
+        os.remove(HDR_FILE)
+    print(r.stderr.strip() or r.stdout.strip(), file=sys.stderr)
+    die("config did not validate; hdr.kdl removed")
+
+
+def resolve_peak(connector, requested):
+    if requested is not None:
+        return requested, "--peak"
+    peak, _favg, _min = edid_luminance(connector)
+    if peak:
+        return peak, "EDID"
+    return FALLBACK_PEAK, "fallback"
+
+
+def cmd_on(a):
+    problem = include_problem()
+    if problem:
+        die(f"hdr.kdl wouldn't load ahead of DMS's outputs: {problem}")
+    connector = pick_output(a.output)
+    existed = os.path.exists(HDR_FILE)
+    content, src = build(connector, a.mode, a.ref, a.peak)
+    with open(HDR_FILE, "w") as f:
+        f.write(content)
+    validate_or_revert(existed)
+    edid_peak, _, _ = edid_luminance(connector)
+    lum = []
+    if a.ref is not None:
+        lum.append(f"ref={a.ref}")
+    if a.peak is not None:
+        lum.append(f"peak={a.peak} (override)")
+    elif edid_peak:
+        lum.append(f"peak={edid_peak} (niri, from EDID)")
+    print(f"HDR on for {connector}: mode={a.mode} {' '.join(lum)} [block from {src}]")
+
+
+def cmd_off(_):
+    if os.path.exists(HDR_FILE):
+        os.remove(HDR_FILE)
+        print("HDR off")
+    else:
+        print("HDR already off")
+
+
+def cmd_toggle(a):
+    cmd_off(a) if os.path.exists(HDR_FILE) else cmd_on(a)
+
+
+def cmd_status(_):
+    problem = include_problem()
+    print(f"included ahead of DMS : {'NO: ' + problem if problem else 'yes'}")
+    print(f"hdr.kdl               : {'present' if os.path.exists(HDR_FILE) else 'absent'}")
+    for name, info in sorted(live_outputs().items()):
+        modes, cur = info.get("modes") or [], info.get("current_mode")
+        m = modes[cur] if cur is not None and cur < len(modes) else None
+        rate = f'{m["refresh_rate"]/1000:.3f}Hz' if m else "?"
+        res = f'{m["width"]}x{m["height"]}' if m else "?"
+        peak, favg, mini = edid_luminance(name)
+        lum = f"peak {peak}" if peak else "peak unknown"
+        if favg:
+            lum += f", frame-avg {favg}"
+        if mini is not None:
+            lum += f", min {mini:.4f}"
+        print(f"  {name}: {res} @ {rate}, max-bpc {info.get('max_bpc', '?')}")
+        print(f"      EDID HDR luminance: {lum} nits")
+
+
+def main():
+    p = argparse.ArgumentParser(prog="niri-hdr", description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = p.add_subparsers(dest="cmd", required=True)
+    for name, fn, needs_opts in (("on", cmd_on, True), ("off", cmd_off, False),
+                                 ("toggle", cmd_toggle, True), ("status", cmd_status, False)):
+        s = sub.add_parser(name)
+        s.set_defaults(func=fn)
+        if needs_opts:
+            s.add_argument("--output", help="connector, e.g. DP-2 (default: the only one)")
+            s.add_argument("--mode", choices=["auto", "on"], default="on",
+                           help='"on" keeps the output in HDR so games that probe once at startup detect it; "auto" only engages for a fullscreen HDR surface')
+            s.add_argument("--ref", type=int, default=None, help="reference-luminance override (default: niri's 203)")
+            s.add_argument("--peak", type=int, default=None, help="peak-luminance in nits (default: from EDID)")
+    a = p.parse_args()
+    a.func(a)
+
+
+if __name__ == "__main__":
+    main()
