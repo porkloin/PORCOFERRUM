@@ -79,6 +79,14 @@ systemctl enable 1password-polkit-policy.service
 dnf5 install -y xdg-native-messaging-proxy
 printf '\nxdg-native-messaging-proxy\n' >> /etc/1password/custom_allowed_browsers
 
+# 1Password's "start at login" (~/.config/autostart) races DMS, and Electron only registers its tray icon if the
+# StatusNotifierWatcher is already up. dms.service is Type=notify, so ordering after it is enough.
+mkdir -p /usr/lib/systemd/user/app-com.onepassword.OnePassword@autostart.service.d
+cat > /usr/lib/systemd/user/app-com.onepassword.OnePassword@autostart.service.d/after-dms.conf <<'EOF'
+[Unit]
+After=dms.service
+EOF
+
 # niri: additions to Zirconium's defaults through its system-wide override (zirconium.kdl includes /etc/niri/local.kdl,
 # ahead of DMS's configs), and niri-hdr, whose ~/.config/niri/hdr.kdl they include. ~/.config/niri stays Zirconium's.
 install -Dm644 /ctx/niri/porcoferrum.kdl /usr/share/porcoferrum/niri/porcoferrum.kdl

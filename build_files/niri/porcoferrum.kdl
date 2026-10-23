@@ -17,6 +17,11 @@ layout {
     always-center-single-column
 }
 
+binds {
+    // 1Password's own global shortcut can't work under niri on Wayland; this is its default key.
+    Ctrl+Shift+Space { spawn "1password" "--quick-access"; }
+}
+
 window-rule {
     match app-id=r#"app\.zen_browser\.zen$"# title="^Picture-in-Picture$"
     match app-id=r#"Zen Browser$"# title="^Picture-in-Picture$"
