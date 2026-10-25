@@ -1,19 +1,21 @@
-# Applies the repo set in ~/.config/materia/materia.env (MATERIA_SOURCE__URL), which can also override the settings
-# below, e.g. MATERIA_HOSTNAME.
+# Applies the repo set in ~/.config/materia/materia.env (written by `zjust setup-materia`), which can also override the
+# settings below, e.g. MATERIA_HOSTNAME. Attributes come from the repo's attributes/: <host>.toml in the clear,
+# <host>.age encrypted to this machine's key.
 [Unit]
 Description=Materia: apply this machine's repo
 After=podman.socket podman-user-wait-network-online.service
 Wants=podman.socket podman-user-wait-network-online.service
-ConditionPathExists=%h/.ssh/materia_ro
-ConditionPathExists=%h/.config/materia/materia.env
+AssertPathExists=%h/.config/materia/materia.env
+AssertPathExists=%h/.config/materia/key.txt
 
 [Service]
 Type=oneshot
 Environment=MATERIA_SOURCE__KIND=git
 Environment=MATERIA_GIT__BRANCH=main
 Environment=MATERIA_GIT__CAREFUL=true
-Environment=MATERIA_GIT__PRIVATE_KEY=%h/.ssh/materia_ro
 Environment=MATERIA_FILE__BASE_DIR=attributes
+Environment=MATERIA_AGE__BASE_DIR=attributes
+Environment=MATERIA_AGE__KEYFILE=%h/.config/materia/key.txt
 EnvironmentFile=%h/.config/materia/materia.env
 ExecStart=/usr/bin/materia update
 TimeoutStartSec=30min
