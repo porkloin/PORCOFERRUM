@@ -95,6 +95,8 @@ echo 'include "/usr/share/porcoferrum/niri/porcoferrum.kdl"' > /etc/niri/local.k
 install -Dm755 /ctx/niri/niri-hdr /usr/bin/niri-hdr
 
 test -x /usr/bin/materia
+# age decrypts a machine repo's encrypted attributes (see `zjust setup-materia`).
+dnf5 install -y age
 
 # zjust recipes
 install -m 644 /ctx/70-porcoferrum.just /usr/share/zirconium/just/70-porcoferrum.just
