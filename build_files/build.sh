@@ -98,4 +98,14 @@ install -Dm755 /ctx/niri/niri-hdr /usr/bin/niri-hdr
 install -m 644 /ctx/70-porcoferrum.just /usr/share/zirconium/just/70-porcoferrum.just
 echo 'import "/usr/share/zirconium/just/70-porcoferrum.just"' >> /usr/share/zirconium/just/00-start.just
 
+# Require our cosign signature on updates of this image (key copied in by the Containerfile).
+jq '.transports.docker["ghcr.io/porkloin/porcoferrum"] = [{"type": "sigstoreSigned", "keyPath": "/etc/pki/containers/porcoferrum.pub", "signedIdentity": {"type": "matchRepository"}}]' \
+  /etc/containers/policy.json > /tmp/policy.json
+mv /tmp/policy.json /etc/containers/policy.json
+cat > /etc/containers/registries.d/porcoferrum.yaml <<'YAML'
+docker:
+  ghcr.io/porkloin/porcoferrum:
+    use-sigstore-attachments: true
+YAML
+
 dnf5 clean all
