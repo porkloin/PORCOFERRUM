@@ -28,7 +28,7 @@ setup-1password-flatpak BROWSER="":
 # An ssh:// or user@host: URL is a private repo. Materia's git client reads key files only (no ssh-agent): if the first
 # of ~/.ssh/id_{ed25519,ecdsa,rsa} has no passphrase and can read the repo, that's used; otherwise the recipe makes a
 # read-only deploy key, ~/.ssh/materia_ro. Each remote named after the host name (a private [Remotes] component) gets
-# its own, ~/.ssh/materia_<remote>_ro. Rerunning keeps existing keys.
+# its own, ~/.ssh/materia_<remote>_ro. Rerunning keeps existing keys, and switches to your own key once it works.
 # Point Materia at this machine's repo: setup-materia <repo url> [host name] [remote...]
 [positional-arguments]
 setup-materia URL HOSTNAME="" *REMOTES:
@@ -81,7 +81,7 @@ setup-materia URL HOSTNAME="" *REMOTES:
         for k in id_ed25519 id_ecdsa id_rsa; do
             [[ -f "${HOME}/.ssh/${k}" ]] && { key="${HOME}/.ssh/${k}"; break; }
         done
-        if [[ ! -f "${HOME}/.ssh/materia_ro" && -n "${key}" ]] && readable "${key}"; then
+        if [[ -n "${key}" ]] && readable "${key}"; then
             echo "Materia can read the repo with ${key}; no deploy key needed."
         else
             newkey materia_ro
