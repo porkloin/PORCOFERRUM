@@ -60,15 +60,19 @@ setup-materia URL HOSTNAME="" *REMOTES:
         echo "Add ${host}'s host key to ~/.ssh/known_hosts: Materia won't connect without it."
     fi
 
-    # Can Materia read the repo, using key file $1 (or no key, for a public URL)?
+    # Can Materia read the repo, using key file $1 (or no key, for a public URL)? If not, ${why} says why.
     readable() {
-        if [[ -z "${1:-}" ]]; then
-            GIT_TERMINAL_PROMPT=0 git ls-remote "${url}" >/dev/null 2>&1
-        else
-            ssh-keygen -y -P "" -f "$1" >/dev/null 2>&1 &&
-                GIT_SSH_COMMAND="ssh -i $1 -o IdentitiesOnly=yes -o IdentityAgent=none -o BatchMode=yes" \
-                    GIT_TERMINAL_PROMPT=0 git ls-remote "${url}" >/dev/null 2>&1
+        local ssh=()
+        if [[ -n "${1:-}" ]]; then
+            if ! ssh-keygen -y -P "" -f "$1" >/dev/null 2>&1; then
+                why="$1 has a passphrase, which Materia can't use"
+                return 1
+            fi
+            ssh=("GIT_SSH_COMMAND=ssh -i $1 -o IdentitiesOnly=yes -o IdentityAgent=none -o BatchMode=yes")
         fi
+        why="$(env "${ssh[@]}" GIT_TERMINAL_PROMPT=0 git ls-remote "${url}" 2>&1 >/dev/null)" && return
+        why="${why%%$'\n'*}"
+        return 1
     }
     newkey() {
         [[ -f "${HOME}/.ssh/$1" ]] || ssh-keygen -q -t ed25519 -N "" -C "$(uname -n)-$1" -f "${HOME}/.ssh/$1"
@@ -84,6 +88,7 @@ setup-materia URL HOSTNAME="" *REMOTES:
         if [[ -n "${key}" ]] && readable "${key}"; then
             echo "Materia can read the repo with ${key}; no deploy key needed."
         else
+            [[ -z "${key}" ]] || echo "${key} can't read the repo (${why}); using a deploy key."
             newkey materia_ro
             key="${HOME}/.ssh/materia_ro"
             env+=("MATERIA_GIT__PRIVATE_KEY=${key}")
@@ -112,7 +117,8 @@ setup-materia URL HOSTNAME="" *REMOTES:
     fi
     echo
     until readable "${key}"; do
-        if ! gum confirm "Materia can't read ${url} yet. Check again?"; then
+        echo "Materia can't read ${url} yet: ${why}"
+        if ! gum confirm "Check again?"; then
             echo "Once it can: systemctl --user start materia-update.service"
             exit 0
         fi
