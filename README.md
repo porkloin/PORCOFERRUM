@@ -28,7 +28,8 @@ To turn it on:
 1. `zjust setup-materia <repo url> [host name]`. For an `ssh://` URL it checks whether your SSH key can read the repo
    (Materia needs a key file without a passphrase; it doesn't use ssh-agent), and if not makes a read-only deploy key
    to add.
-2. `systemctl --user start materia-update.service` to apply the repo; rerun it to apply new commits.
+2. Say yes when it offers to apply: it enables `materia-update.timer`, which applies new commits every 5 minutes
+   (later: `systemctl --user enable --now materia-update.timer`).
 
 A minimal repo:
 
