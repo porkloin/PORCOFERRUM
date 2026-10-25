@@ -94,6 +94,8 @@ mkdir -p /etc/niri
 echo 'include "/usr/share/porcoferrum/niri/porcoferrum.kdl"' > /etc/niri/local.kdl
 install -Dm755 /ctx/niri/niri-hdr /usr/bin/niri-hdr
 
+test -x /usr/bin/materia
+
 # zjust recipes
 install -m 644 /ctx/70-porcoferrum.just /usr/share/zirconium/just/70-porcoferrum.just
 echo 'import "/usr/share/zirconium/just/70-porcoferrum.just"' >> /usr/share/zirconium/just/00-start.just

@@ -5,6 +5,19 @@ ARG BASE_IMAGE=ghcr.io/zirconium-dev/zirconium-jackrabbit:latest
 FROM scratch AS ctx
 COPY build_files /
 
+### MATERIA
+## Release binary, verified against the pinned checksum.
+FROM ${BASE_IMAGE} AS materia
+ARG MATERIA_VERSION=0.8.0
+ARG MATERIA_SHA256=5ac4a44a54bbdc71f87db4d168c0246f6b272208d6a0a28e66575ab649bcf09d
+RUN set -eux; \
+    mkdir -p /tmp/materia/out; \
+    cd /tmp/materia; \
+    tarball="materia-v${MATERIA_VERSION}-amd64.tar.gz"; \
+    curl -fsSLO "https://github.com/stryan/materia/releases/download/v${MATERIA_VERSION}/$tarball"; \
+    echo "${MATERIA_SHA256}  $tarball" | sha256sum -c; \
+    tar -xzf "$tarball" -C out
+
 ### NIRI-SPICY
 FROM ${BASE_IMAGE} AS niri-spicy
 
@@ -25,6 +38,10 @@ FROM ${BASE_IMAGE}
 ## by the package manager.
 
 # RUN rm /opt && mkdir /opt
+
+COPY image/ /
+COPY --from=materia /tmp/materia/out/bin/materia /usr/bin/materia
+COPY --from=materia /tmp/materia/out/man/ /usr/share/man/
 
 ### MODIFICATIONS
 ## make modifications desired in your image and install packages by modifying the build.sh script
