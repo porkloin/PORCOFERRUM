@@ -25,9 +25,10 @@ setup-1password-flatpak BROWSER="":
     done
     echo "Done. Restart ${browser} and 1Password."
 
-# An ssh:// or user@host: URL is a private repo, pulled with a read-only deploy key, ~/.ssh/materia_ro. Each remote
-# named after the host name (a private [Remotes] component) gets its own, ~/.ssh/materia_<remote>_ro. Rerunning keeps
-# existing keys.
+# An ssh:// or user@host: URL is a private repo. Materia's git client reads key files only (no ssh-agent): if the first
+# of ~/.ssh/id_{ed25519,ecdsa,rsa} has no passphrase and can read the repo, that's used; otherwise the recipe makes a
+# read-only deploy key, ~/.ssh/materia_ro. Each remote named after the host name (a private [Remotes] component) gets
+# its own, ~/.ssh/materia_<remote>_ro. Rerunning keeps existing keys.
 # Point Materia at this machine's repo: setup-materia <repo url> [host name] [remote...]
 [positional-arguments]
 setup-materia URL HOSTNAME="" *REMOTES:
@@ -44,27 +45,11 @@ setup-materia URL HOSTNAME="" *REMOTES:
         (umask 077; age-keygen -o "${cfg}/key.txt" 2>/dev/null)
     fi
 
-    newkey() {
-        [[ -f "${HOME}/.ssh/$1" ]] || ssh-keygen -q -t ed25519 -N "" -C "$(uname -n)-$1" -f "${HOME}/.ssh/$1"
-    }
-    env=("MATERIA_SOURCE__URL=${url}")
-    [[ -z "${name}" ]] || env+=("MATERIA_HOSTNAME=${name}")
-    keys=()
     host=""
     case "${url}" in
         ssh://*)  host="$(sed -E 's#^ssh://([^@/]+@)?([^/:]+).*#\2#' <<<"${url}")" ;;
         *@*:*)    host="$(sed -E 's#^[^@]+@([^:]+):.*#\1#' <<<"${url}")" ;;
     esac
-    if [[ -n "${host}" ]]; then
-        newkey materia_ro
-        env+=("MATERIA_GIT__PRIVATE_KEY=${HOME}/.ssh/materia_ro")
-        keys+=("materia_ro")
-    fi
-    for remote in "$@"; do
-        [[ "${remote}" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "Bad remote name: ${remote}" >&2; exit 1; }
-        newkey "materia_${remote}_ro"
-        keys+=("materia_${remote}_ro")
-    done
 
     # GitHub's host keys come from its API over HTTPS (remotes are assumed to be on GitHub); any other host's are yours
     # to add.
@@ -75,6 +60,42 @@ setup-materia URL HOSTNAME="" *REMOTES:
         echo "Add ${host}'s host key to ~/.ssh/known_hosts: Materia won't connect without it."
     fi
 
+    # Can Materia read the repo, using key file $1 (or no key, for a public URL)?
+    readable() {
+        if [[ -z "${1:-}" ]]; then
+            GIT_TERMINAL_PROMPT=0 git ls-remote "${url}" >/dev/null 2>&1
+        else
+            ssh-keygen -y -P "" -f "$1" >/dev/null 2>&1 &&
+                GIT_SSH_COMMAND="ssh -i $1 -o IdentitiesOnly=yes -o IdentityAgent=none -o BatchMode=yes" \
+                    GIT_TERMINAL_PROMPT=0 git ls-remote "${url}" >/dev/null 2>&1
+        fi
+    }
+    newkey() {
+        [[ -f "${HOME}/.ssh/$1" ]] || ssh-keygen -q -t ed25519 -N "" -C "$(uname -n)-$1" -f "${HOME}/.ssh/$1"
+    }
+    env=("MATERIA_SOURCE__URL=${url}")
+    [[ -z "${name}" ]] || env+=("MATERIA_HOSTNAME=${name}")
+    keys=()
+    key=""
+    if [[ -n "${host}" ]]; then
+        for k in id_ed25519 id_ecdsa id_rsa; do
+            [[ -f "${HOME}/.ssh/${k}" ]] && { key="${HOME}/.ssh/${k}"; break; }
+        done
+        if [[ ! -f "${HOME}/.ssh/materia_ro" && -n "${key}" ]] && readable "${key}"; then
+            echo "Materia can read the repo with ${key}; no deploy key needed."
+        else
+            newkey materia_ro
+            key="${HOME}/.ssh/materia_ro"
+            env+=("MATERIA_GIT__PRIVATE_KEY=${key}")
+            keys+=("materia_ro")
+        fi
+    fi
+    for remote in "$@"; do
+        [[ "${remote}" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "Bad remote name: ${remote}" >&2; exit 1; }
+        newkey "materia_${remote}_ro"
+        keys+=("materia_${remote}_ro")
+    done
+
     [[ ! -f "${cfg}/materia.env" ]] || cp "${cfg}/materia.env" "${cfg}/materia.env.bak"
     printf '%s\n' "${env[@]}" > "${cfg}/materia.env"
     systemctl --user enable --now podman.socket
@@ -84,13 +105,19 @@ setup-materia URL HOSTNAME="" *REMOTES:
     echo "    $(age-keygen -y "${cfg}/key.txt")"
     if [[ ${#keys[@]} -gt 0 ]]; then
         echo "Read-only deploy keys to add:"
-        for key in "${keys[@]}"; do
-            if [[ "${key}" == materia_ro ]]; then echo "  the repo (${url}):"; else k="${key#materia_}"; echo "  ${k%_ro}:"; fi
-            echo "    $(cat "${HOME}/.ssh/${key}.pub")"
+        for k in "${keys[@]}"; do
+            if [[ "${k}" == materia_ro ]]; then echo "  the repo (${url}):"; else r="${k#materia_}"; echo "  ${r%_ro}:"; fi
+            echo "    $(cat "${HOME}/.ssh/${k}.pub")"
         done
     fi
     echo
-    if gum confirm "Start materia-update now?"; then
+    until readable "${key}"; do
+        if ! gum confirm "Materia can't read ${url} yet. Check again?"; then
+            echo "Once it can: systemctl --user start materia-update.service"
+            exit 0
+        fi
+    done
+    if gum confirm "Materia can read the repo. Start materia-update now?"; then
         systemctl --user start materia-update.service
     else
         echo "Later: systemctl --user start materia-update.service"
