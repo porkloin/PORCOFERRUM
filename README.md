@@ -25,8 +25,9 @@ starts them, and applies whatever changes you push. Here it runs rootless, as yo
 
 To turn it on:
 
-1. `zjust setup-materia <repo url> [host name]`. For an `ssh://` URL it also makes a read-only deploy key and prints it
-   to add to the repo.
+1. `zjust setup-materia <repo url> [host name]`. For an `ssh://` URL it checks whether your SSH key can read the repo
+   (Materia needs a key file without a passphrase; it doesn't use ssh-agent), and if not makes a read-only deploy key
+   to add.
 2. `systemctl --user start materia-update.service` to apply the repo; rerun it to apply new commits.
 
 A minimal repo:
