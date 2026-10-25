@@ -119,12 +119,13 @@ setup-materia URL HOSTNAME="" *REMOTES:
     until readable "${key}"; do
         echo "Materia can't read ${url} yet: ${why}"
         if ! gum confirm "Check again?"; then
-            echo "Once it can: systemctl --user start materia-update.service"
+            echo "Once it can: systemctl --user enable --now materia-update.timer"
             exit 0
         fi
     done
-    if gum confirm "Materia can read the repo. Start materia-update now?"; then
+    if gum confirm "Materia can read the repo. Apply it now, and every 5 minutes from here on?"; then
+        systemctl --user enable --now materia-update.timer
         systemctl --user start materia-update.service
     else
-        echo "Later: systemctl --user start materia-update.service"
+        echo "Later: systemctl --user enable --now materia-update.timer"
     fi
