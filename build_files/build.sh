@@ -16,6 +16,29 @@ dnf5 install -y --nogpgcheck \
 dnf5 install -y ghostty
 dnf5 remove -y terra-release terra-gpg-keys
 
+# Tailscale ships in Fedora's repos but the packaging lags upstream (fc45
+# stable was still 1.98.8 when the security-fixing 1.104 line shipped), so
+# take it from Tailscale's own repo and pin a minimum version to keep that
+# from silently regressing.
+cat > /etc/yum.repos.d/tailscale.repo <<'EOF'
+[tailscale-stable]
+name=Tailscale stable
+baseurl=https://pkgs.tailscale.com/stable/fedora/$basearch
+enabled=1
+type=rpm
+repo_gpgcheck=1
+gpgcheck=1
+gpgkey=https://pkgs.tailscale.com/stable/fedora/repo.gpg
+EOF
+dnf5 install -y tailscale
+dnf5 update -y tailscale
+rm /etc/yum.repos.d/tailscale.repo
+TAILSCALE_VERSION=$(rpm -q tailscale --qf '%{VERSION}')
+if [[ "$(printf '%s\n1.104\n' "${TAILSCALE_VERSION}" | sort -V | head -n1)" != "1.104" ]]; then
+    echo "tailscale ${TAILSCALE_VERSION} is older than 1.104" >&2
+    exit 1
+fi
+
 # 1pass via RPM instead of flatpak for better integration with
 # desktop applications
 #
@@ -103,9 +126,26 @@ install -m 644 /ctx/70-porcoferrum.just /usr/share/zirconium/just/70-porcoferrum
 echo 'import "/usr/share/zirconium/just/70-porcoferrum.just"' >> /usr/share/zirconium/just/00-start.just
 
 # Require our cosign signature on updates of this image (key copied in by the Containerfile).
-jq '.transports.docker["ghcr.io/porkloin/porcoferrum"] = [{"type": "sigstoreSigned", "keyPath": "/etc/pki/containers/porcoferrum.pub", "signedIdentity": {"type": "matchRepository"}}]' \
-  /etc/containers/policy.json > /tmp/policy.json
-mv /tmp/policy.json /etc/containers/policy.json
+# The policy is ours, not the base's: containers-common keeps moving it (Fedora 45 shipped
+# it at /usr/share/containers, leaving no /etc copy), and podman loads exactly one file.
+# Install the vendored policy as authoritative, then assert every key it references,
+# so packaging changes break the build here loudly instead of user pulls later.
+install -Dm644 /ctx/policy.json /etc/containers/policy.json
+jq -e '.transports.docker["ghcr.io/porkloin/porcoferrum"] | any(.type == "sigstoreSigned")' \
+  /etc/containers/policy.json >/dev/null
+jq -e '.transports.docker[""][0].type == "insecureAcceptAnything"' \
+  /etc/containers/policy.json >/dev/null
+# UBI/toolbox pulls are signedBy the Red Hat GPG key; drop the entries rather
+# than ship a dangling reference if the key ever stops shipping.
+if ! test -f /etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release; then
+  jq 'del(.transports.docker["registry.access.redhat.com"], .transports.docker["registry.redhat.io"])' \
+    /etc/containers/policy.json > /tmp/policy.json
+  mv /tmp/policy.json /etc/containers/policy.json
+fi
+while read -r key; do
+  test -f "${key}"
+done < <(jq -r '[.. | .keyPath?, (.keyPaths? // empty)[]?] | .[] | select(. != null)' \
+  /etc/containers/policy.json)
 cat > /etc/containers/registries.d/porcoferrum.yaml <<'YAML'
 docker:
   ghcr.io/porkloin/porcoferrum:

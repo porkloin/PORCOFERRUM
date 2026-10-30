@@ -40,6 +40,7 @@ FROM ${BASE_IMAGE}
 # RUN rm /opt && mkdir /opt
 
 COPY image/ /
+COPY cosign.pub /etc/pki/containers/porcoferrum.pub
 COPY --from=materia /tmp/materia/out/bin/materia /usr/bin/materia
 COPY --from=materia /tmp/materia/out/man/ /usr/share/man/
 
@@ -53,8 +54,6 @@ RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
   --mount=type=cache,dst=/var/log \
   --mount=type=tmpfs,dst=/tmp \
   /ctx/build.sh
-
-COPY cosign.pub /etc/pki/containers/porcoferrum.pub
 
 ### LINTING
 ## Verify final image and contents are correct.
