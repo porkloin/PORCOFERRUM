@@ -1,0 +1,118 @@
+{
+  "default": [
+    { "type": "reject" }
+  ],
+  "transports": {
+    "atomic": {
+      "": [
+        { "type": "insecureAcceptAnything" }
+      ]
+    },
+    "containers-storage": {
+      "": [
+        { "type": "insecureAcceptAnything" }
+      ]
+    },
+    "dir": {
+      "": [
+        { "type": "insecureAcceptAnything" }
+      ]
+    },
+    "docker": {
+      "": [
+        { "type": "insecureAcceptAnything" }
+      ],
+      "ghcr.io/porkloin/porcoferrum": [
+        {
+          "type": "sigstoreSigned",
+          "keyPath": "/etc/pki/containers/porcoferrum.pub",
+          "signedIdentity": { "type": "matchRepository" }
+        }
+      ],
+      "ghcr.io/zirconium-dev": [
+        {
+          "type": "sigstoreSigned",
+          "keyPaths": [
+            "/usr/share/pki/containers/zirconium.pub",
+            "/usr/share/pki/containers/hawaii.pub"
+          ],
+          "signedIdentity": { "type": "matchRepository" }
+        }
+      ],
+      "registry.access.redhat.com": [
+        {
+          "type": "signedBy",
+          "keyType": "GPGKeys",
+          "keyPath": "/etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release"
+        }
+      ],
+      "registry.redhat.io": [
+        {
+          "type": "signedBy",
+          "keyType": "GPGKeys",
+          "keyPath": "/etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release"
+        }
+      ]
+    },
+    "docker-archive": {
+      "": [
+        { "type": "insecureAcceptAnything" }
+      ]
+    },
+    "docker-daemon": {
+      "": [
+        { "type": "insecureAcceptAnything" }
+      ]
+    },
+    "oci": {
+      "": [
+        { "type": "insecureAcceptAnything" }
+      ]
+    },
+    "oci-archive": {
+      "": [
+        { "type": "insecureAcceptAnything" }
+      ]
+    },
+    "ostree": {
+      "": [
+        { "type": "insecureAcceptAnything" }
+      ]
+    },
+    "ostree-unverifiable-email": {
+      "": [
+        { "type": "insecureAcceptAnything" }
+      ]
+    },
+    "ostree-unverified-image": {
+      "": [
+        { "type": "insecureAcceptAnything" }
+      ]
+    },
+    "ostree-unverified-registry": {
+      "": [
+        { "type": "insecureAcceptAnything" }
+      ]
+    },
+    "ostree-verify": {
+      "": [
+        { "type": "insecureAcceptAnything" }
+      ]
+    },
+    "skopeo-copy": {
+      "": [
+        { "type": "insecureAcceptAnything" }
+      ]
+    },
+    "storage": {
+      "": [
+        { "type": "insecureAcceptAnything" }
+      ]
+    },
+    "tarball": {
+      "": [
+        { "type": "insecureAcceptAnything" }
+      ]
+    }
+  }
+}
